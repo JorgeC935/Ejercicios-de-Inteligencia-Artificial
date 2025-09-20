@@ -1,0 +1,99 @@
+import os
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+     
+
+SEED = 42
+os.environ["PYTHONHASHSEED"] = str(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+print("Tensorflow:", tf.__version__)
+
+dataset = pd.read_csv("Churn_Modelling.csv")
+X = dataset.iloc[:, 3:-1].copy()
+y = dataset.iloc[:, -1].values
+print("Shapes:", X.shape, y.shape)
+
+le_gender = LabelEncoder()
+X.loc[:, X.columns[2]] = le_gender.fit_transform(X.iloc[:, 2])
+ct = ColumnTransformer(
+    transformers=[("geo_ohe", OneHotEncoder(handle_unknown="ignore"), [1])],
+    remainder="passthrough"
+)
+X_ohe = ct.fit_transform(X)
+X_ohe = np.asarray(X_ohe).astype("float32")
+     
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X_ohe, y, test_size=0.2, random_state=SEED, stratify=y
+)
+
+sc = StandardScaler(with_mean=False)
+X_train = sc.fit_transform(X_train).astype("float32")
+X_test = sc.transform(X_test).astype("float32")
+     
+
+from tensorflow.keras import layers, models, callbacks
+def build_model(input_dim):
+  model = models.Sequential([
+      layers.Dense(16, activation="relu", input_shape=(input_dim,)),
+      layers.Dense(16, activation="relu"),
+      layers.Dense(1, activation="sigmoid")
+  ])
+  model.compile(
+      optimizer="adam",
+      loss="binary_crossentropy",
+      metrics=["accuracy", tf.keras.metrics.AUC(name="auc")]
+  )
+  return model
+ann = build_model(input_dim=X_train.shape[1])
+ann.summary()
+
+cb = [
+    callbacks.EarlyStopping(patience=10, restore_best_weights=True, monitor="val_auc", mode="max"),
+    callbacks.ModelCheckpoint("best_ann.keras", monitor="val_auc", mode="max", save_best_only=True),
+    callbacks.ReduceLROnPlateau(monitor="val_loss", patience=5, factor=0.5)
+]
+     
+
+hist = ann.fit(
+    X_train, y_train,
+    validation_split=0.2,
+    epochs=200,
+    batch_size=32,
+    callbacks=cb,
+    verbose=1
+)
+
+y_proba = ann.predict(X_test).ravel()
+y_pred = (y_proba >= 0.5).astype(int)
+
+print("\nMatriz de confusión:\n", confusion_matrix(y_test, y_pred))
+print("\nReporte de clasificación:\n", classification_report(y_test, y_pred, digits=4))
+print("AUC:", roc_auc_score(y_test, y_proba))
+
+sample_raw = pd.DataFrame([{
+    "CreditScore": 600,
+    "Geography": "France",
+    "Gender": "Male",
+    "Age": 40,
+    "Tenure": 3,
+    "Balance": 60000,
+    "NumOfProducts": 2,
+    "HasCrCard": 1,
+    "IsActiveMember": 1,
+    "EstimatedSalary": 50000
+}])
+sample_raw.loc[:, "Gender"] = le_gender.transform(sample_raw["Gender"])
+sample_ohe = ct.transform(sample_raw)
+sample_scaled = sc.transform(sample_ohe).astype("float32")
+
+proba = ann.predict(sample_scaled).item()
+print(f"\nProbabilidad de churn para el cliente ejemplo: {proba:.4f}")
+print("Salir del banco" if proba >= 0.5 else "Permanecer en el banco")
