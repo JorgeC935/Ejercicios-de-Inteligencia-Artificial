@@ -1,0 +1,188 @@
+#==========================================
+# 0) Imports y Configuracion  hacer prediccion, implementarla en esta bnueva red neuronal, con mismas librerias, para red secienciasl y base de preprocesamiento, la digerencia es que  no hay prediccion, se entrena,
+
+#==========================================
+import os
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+
+# 1. Importar el framework de red neuronal (Keras/TensorFlow)
+from tensorflow.keras.models import Sequential  # Modelo secuencial (capas una tras otra)
+from tensorflow.keras.layers import Dense, Dropout  # Capas densas (completamente conectadas) y Dropout
+from tensorflow.keras.optimizers import Adam, RMSprop  # Optimizadores comunes
+
+# 2. Importar herramientas para preparar los datos
+from sklearn.model_selection import train_test_split  # Para dividir en train/validation
+from sklearn.preprocessing import StandardScaler, MinMaxScaler  # Para escalar/normalizar los datos (CRUCIAL en regresión)
+
+# 3. Importar herramientas para evaluar el modelo
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import numpy as np
+import matplotlib.pyplot as plt  # Para graficar resultados
+
+#Reproductibilidad
+SEED = 42
+os.environ['PYTHONHASHSEED'] = str(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+
+print("TensorFlow:", tf.__version__)
+print("Keras:", tf.keras.__version__)
+
+#==========================================
+#1) Cargar dataset
+#==========================================
+
+df = pd.read_csv("insurance.csv")
+display(df.head())
+
+#Mirada Rapida
+print("Shape bruto:" , df.shape)
+print("Cols", list(df.columns))
+
+#============================
+#2) Seleccion de variables and Target Mapping
+#============================
+# Seoleccion de columnas especificas
+feature_cols = ["age", "sex", "bmi", "smoker", 'children', "region"]
+x_train, x_val, y_train, y_val = train_test_split(df[feature_cols], df["charges"], test_size=0.2, random_state=SEED)
+
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+# Identificar columnas numericas
+categorical_features = ['sex', 'smoker', 'region']
+numerical_features = ['age', 'bmi', 'children']
+
+
+# Crear columna transf
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numerical_features),
+        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
+    ],
+    remainder='passthrough'
+)
+
+
+print("Imput dims:", x_train.shape[1])
+
+
+X_train_scaled = preprocessor.fit_transform(x_train)
+X_val_scaled = preprocessor.transform(x_val)
+
+print("Shape after preprocessing:", X_train_scaled.shape)
+
+#===================================
+#6) Definir y compilar  el modelo
+#===================================
+def build_model(input_dim: int) -> tf.keras.Model:
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Input(shape=(input_dim,)),
+        tf.keras.layers.Dense(64, activation="relu"), # decrescer de neuronas
+        tf.keras.layers.Dropout(0.2), # Dropout
+        tf.keras.layers.Dense(32, activation="relu"),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(1, activation="linear") # para regersion
+    ])
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), # Usar a Adam como optimizador
+        loss="mse",
+        metrics=["mae", "mse"]
+    )
+    return model
+
+model = build_model(X_train_scaled.shape[1])
+model.summary()
+
+# ================================
+# 7) Callbacks (buenoas prácticas)
+# ================================
+cbs = [
+    tf.keras.callbacks.EarlyStopping(monitor="val_loss", mode="min", patience=20, restore_best_weights=True), # Monitor validation loss for regression
+    tf.keras.callbacks.ModelCheckpoint("insurance_best_model.keras", monitor="val_loss", mode="min", save_best_only=True), # Save best model based on validation loss
+    tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=10, min_lr=0.0001) # Reduce learning rate on validation loss plateau
+]
+     
+
+# ====================
+# 8) Entrenamiento
+# ====================
+hist = model.fit(
+    X_train_scaled, y_train, # Usa escala de entrenamiento
+    validation_data=(X_val_scaled, y_val), # Validacion
+    epochs=200,
+    batch_size=32,
+    callbacks=cbs,
+    verbose=1
+)
+
+# ==========================
+# 9) Evaluación  en test
+# ==========================
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import numpy as np # Import numpy for sqrt
+
+# 1. UsaR EL MODELO ENTRNADO
+y_pred = model.predict(X_val_scaled).ravel()
+
+
+mse = mean_squared_error(y_val, y_pred)
+mae = mean_absolute_error(y_val, y_pred)
+rmse = np.sqrt(mse) # Calculate RMSE
+r2 = r2_score(y_val, y_pred)
+
+print(f"Mean Squared Error on Validation Data: {mse:.2f}")
+print(f"Root Mean Squared Error on Validation Data: {rmse:.2f}") # Print RMSE
+print(f"Mean Absolute Error on Validation Data: {mae:.2f}")
+print(f"R-squared on Validation Data: {r2:.2f}")
+     
+9/9 ━━━━━━━━━━━━━━━━━━━━ 0s 6ms/step 
+Mean Squared Error on Validation Data: 26856407.92
+Root Mean Squared Error on Validation Data: 5182.32
+Mean Absolute Error on Validation Data: 3442.10
+R-squared on Validation Data: 0.83
+
+# =============================================================
+# 10) Interferencia robusta: función predict_one(dict de entrada)
+# =============================================================
+def predict_one(sample: dict) -> float:
+    """
+    Recibe un diccionario 'crudo' con las llaves esperadas:
+    age, sex, bmi, children, smoker, region.
+    Devuelve la predicción del cargo (charges).
+    """
+    # Convertir a DataFrame con columnas en orden esperado
+    # Ellaves con x
+    expected_cols = ["age", "sex", "bmi", "smoker", 'children', "region"]
+    # Reordenar diccionario
+    ordered_sample = {col: sample.get(col) for col in expected_cols}
+    s = pd.DataFrame([ordered_sample])
+
+    # aplicar mismo proessamiento
+    # Usar el procesador
+    s_proc = preprocessor.transform(s) # trabsformar el nuevo ejemplo
+
+    # Predecir
+    prediction = model.predict(s_proc).item() # prediccion
+    return prediction
+
+# Ejemplo de inferencia
+sample = {
+    "age": 30,
+    "sex": "female",
+    "bmi": 25.0,
+    "children": 1,
+    "smoker": "no",
+    "region": "southwest"
+}
+
+
+
+# Ejemplo resultado
+predicted_charge = predict_one(sample)
+print(f"Predicted charge for the sample: {predicted_charge:.2f}")
+     
+1/1 ━━━━━━━━━━━━━━━━━━━━ 0s 35ms/step
+Predicted charge for the sample: 4645.00
