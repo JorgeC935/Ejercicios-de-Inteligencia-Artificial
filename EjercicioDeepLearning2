@@ -1,0 +1,17 @@
+# Ejercicio 2: MLP para resolver el XOR
+import numpy as np
+from sklearn.neural_network import MLPClassifier
+
+# Datos XOR
+X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = np.array([0, 1, 1, 0]) # Salida XOR
+
+# Red neuronal con 2 capas ocultas de 4 neuronas cada una
+mlp = MLPClassifier(hidden_layer_sizes=(4, 4), activation="relu", max_iter=2000)
+
+# Entrenar
+mlp.fit(X, y)
+
+# Probar
+print("Predicciones XOR:", mlp.predict(X))
+print("Probabilidades:", mlp.predict_proba(X))
