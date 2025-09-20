@@ -1,0 +1,128 @@
+# ===================
+# Imports
+# ===================
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models, callbacks
+from sklearn.metrics import classification_report, confusion_matrix
+
+# Reproducibilidad
+SEED = 42
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+
+print("TensodFlow:", tf.__version__)
+
+# =========================
+# 1) Carga del dataset MNIST
+# =========================
+(X_train, y_train), (X_test, y_test) = tf.keras.datasets.mnist.load_data()
+
+# Normalizar valores (0-25 -> 0-1)
+X_train = X_train.astype("float32") / 255.0
+X_test = X_test.astype("float32") / 255.0
+
+# Aplanar imagenes (28x28 -> 784)
+X_train = X_train.reshape(len(X_train), -1)
+X_test = X_test.reshape(len(X_test), -1)
+
+# =========================
+# 2) Definir la red neuronal
+# =========================
+model = models.Sequential([
+    layers.Input(shape=(784,)),                   # 784 neuronas de entrada
+    layers.Dense(128, activation='relu'),         # Capa oculta 1
+    layers.Dropout(0.2),
+    layers.Dense(64, activation='relu'),          # Capa oculta 2
+    layers.Dropout(0.2),
+    layers.Dense(10, activation='softmax')        # 10 neuronas (clases 0-9)
+])
+
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+model.summary()
+
+# ========================
+# 3) Callbacks
+# ========================
+cbs = [
+    callbacks.EarlyStopping(monitor="val_accuracy", patience=5, restore_best_weights=True),
+    callbacks.ModelCheckpoint("mnist_best.keras", monitor="val_accuracy",
+                              save_best_only=True),
+]
+
+# =============================
+# 4) Entrenamiento
+# =============================
+history = model.fit(
+    X_train, y_train,
+    validation_split=0.1,
+    epochs=50,
+    batch_size=128,
+    callbacks=cbs,
+    verbose=1
+)
+
+from contextlib import AsyncExitStack
+# ============================
+# 5) Evaluación
+# ============================
+y_pred = model.predict(X_test).argmax(axis=1)
+
+print("\nMatrix de confusión:\n", confusion_matrix(y_test, y_pred))
+print("\nReporte de clasificación:\n", classification_report(y_test, y_pred))
+
+import matplotlib.pyplot as plt
+
+# Seleccionar una imagen de prueba
+idx = 0
+sample_image = X_test[idx].reshape(28, 28)
+sample_label = y_test[idx]
+
+# Mostrar imagen
+plt.imshow(sample_image, cmap="gray")
+plt.title(f"Etiqueta Real: {sample_label}")
+plt.axis("off")
+plt.show()
+
+# Preparar el dato para el modelo (reshape 1x784)
+sample_input = X_test[idx].reshape(1, -1)
+
+# Predicción
+pred_proba = model.predict(sample_input)
+pred_class = pred_proba.argmax(axis=1)[0]
+
+print(f"Etiqueta real: {sample_label}")
+print(f"Predicción por clase: {pred_proba}")
+print(f"Predicción del modelo: {pred_class}")
+
+import random
+
+for _ in range(5):
+    # Seleccionar una imagen de prueba con un índice random
+    idx = random.randint(0, 100)  # Índice random entre 0 y 100
+    sample_image = X_test[idx].reshape(28, 28)
+    sample_label = y_test[idx]
+
+    # Mostrar imagen
+    plt.imshow(sample_image, cmap="gray")
+    plt.title(f"Etiqueta Real: {sample_label}")
+    plt.axis("off")
+    plt.show()
+
+    # Preparar el dato para el modelo (reshape 1x784)
+    sample_input = X_test[idx].reshape(1, -1)
+
+    # Predicción
+    pred_proba = model.predict(sample_input)
+    pred_class = pred_proba.argmax(axis=1)[0]
+
+    print(f"Etiqueta real: {sample_label}")
+    print(f"Predicción por clase: {pred_proba}")
+    print(f"Predicción del modelo: {pred_class}")
+    print("-" * 30) # Separador para cada iteración
+
