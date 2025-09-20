@@ -1,0 +1,133 @@
+# ==========================
+# 0) Imports y configuración
+# ==========================
+import os
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+
+from sklearn.model_selection import train_test_split
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.utils.class_weight import compute_class_weight
+from tensorflow.keras import layers, models, callbacks
+from sklearn.pipeline import Pipeline
+     
+
+# Reproducibilidad
+SEED = 42
+os.environ["PYTHONHASHSEED"] = str(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+
+print("TensorFlow:", tf.__version__)
+
+# =====================================
+# 1) Cargar dataset Titanic (online URL)
+# =====================================
+df = pd.read_csv("/content/Breast_cancer_dataset.csv")
+
+# Revisar columnas y forma
+print(df.columns)
+df.head()
+
+df = df.drop(columns=['Unnamed: 32'], errors='ignore')
+
+# Objetivo: diagnosis (benigno o maligno 0/1)
+df['diagnosis'] = df['diagnosis'].map({'M':1, 'B':0})
+
+y = df['diagnosis'].values
+
+# Tomar todas las columnas numéricas menos 'id' y 'diagnosis'
+X = df.drop(columns=['id','diagnosis']).copy()
+     
+# Preprocesamiento con ColumnTransformer
+numeric_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())
+])
+
+# Ajustar y transformar todo el dataset
+X_scaled = numeric_transformer.fit_transform(X)
+     
+# Split train/test estratificado
+X_train, X_test, y_train, y_test = train_test_split(
+    X_scaled, y, test_size=0.3, random_state=SEED, stratify=y
+)
+     
+# Definir y compilar el modelo
+def build_model(input_dim):
+    model = models.Sequential([
+        layers.Input(shape=(input_dim,)),
+        layers.Dense(4, activation='relu'),
+        layers.Dropout(0.15),
+        layers.Dense(2, activation='relu'),
+        layers.Dropout(0.15),
+        layers.Dense(1, activation='sigmoid')
+    ])
+
+    model.compile(
+        optimizer='adam',
+        loss='binary_crossentropy',
+        metrics=['accuracy', tf.keras.metrics.AUC(name='auc')]
+    )
+    return model
+
+model = build_model(X_train.shape[1])
+model.summary()
+
+# Callbacks
+cbs = [
+    callbacks.EarlyStopping(monitor='val_auc', mode='max', patience=12, restore_best_weights=True),
+    callbacks.ModelCheckpoint('breast_cancer_best.keras', monitor='val_auc', mode='max', save_best_only=True),
+    callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=6)
+]
+
+# Entrenamiento
+class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
+class_weight_dict = dict(enumerate(class_weights))
+
+hist = model.fit(
+    X_train, y_train,
+    validation_split=0.2,
+    epochs=2,
+    batch_size=32,
+    callbacks=cbs,
+    class_weight=class_weight_dict,
+    verbose=1
+)
+
+# Evaluación  en test
+y_proba = model.predict(X_test).ravel()
+y_pred = (y_proba > 0.5).astype(int)
+
+print("\nMatriz de confusión:\n", confusion_matrix(y_test, y_pred))
+print("\nReporte de clasificación:\n", classification_report(y_test, y_pred, digits=4))
+print("\nAUC:", roc_auc_score(y_test, y_proba))
+
+# Predecir
+def predict_one(sample: dict) -> float:
+    s = pd.DataFrame([sample])
+    # Escalar con el mismo preprocesador
+    s_proc = numeric_transformer.transform(s)
+    proba = model.predict(s_proc).item()
+    return proba
+
+# Ejemplo
+sample = X.iloc[0].to_dict()
+proba = predict_one(sample)
+print(f"\nProbabilidad de malignidad: {proba:.4f}")
+print("Maligno" if proba >= 0.5 else "Benigno")
+
+print(np.bincount(y_train))
+print(np.bincount(y_test))
+
+for i in range(10):
+    sample = X.iloc[i].to_dict()
+    proba = predict_one(sample)
+    print(f"Fila {i} -> Prob malignidad: {proba:.4f}, {'Maligno' if proba>=0.5 else 'Benigno'}")
+
+print(df['diagnosis'].value_counts())
+
