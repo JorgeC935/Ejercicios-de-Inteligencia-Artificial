@@ -1,0 +1,27 @@
+# Ejemplo de sesgo en datos de entrenamiento
+
+# Datos ficticios: (años de experiencia, género, contratado: 1 = sí, 0 = no)
+# Notas: "M" = masculino, "F" = femenino
+datos = [
+    (5, "M", 1),
+    (4, "M", 1),
+    (6, "M", 0),
+    (5, "F", 0),
+    (4, "F", 0),
+    (6, "F", 0),
+]
+
+# Función simple para decidir si contratar (muy básica y sasgada)
+def decidir_contratacion(anios_exp, genero):
+  # Se entrena con datos en los que siempre se contrató a hombres
+  if genero == "M" and anios_exp > 4:
+    return "Contratado"
+  else:
+    return "No contratado"
+
+# Probamos con dos candidatos idénticos pero distinto género
+print(decidir_contratacion(5, "M"))  # Contratado
+print(decidir_contratacion(5, "F"))  # No contratado
+     
+Contratado
+No contratado
