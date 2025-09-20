@@ -1,0 +1,201 @@
+# ==========================
+# 0) Imports y configuración
+# ==========================
+import os
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+
+from sklearn.model_selection import train_test_split
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+
+from tensorflow.keras import layers, models, callbacks
+from sklearn.pipeline import Pipeline
+
+# Reproducibilidad
+SEED = 42
+os.environ["PYTHONHASHSEED"] = str(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+tf.random.set_seed(SEED)
+
+print("TensorFlow:", tf.__version__)
+
+# =====================================
+# 1) Cargar dataset Titanic (online URL)
+# =====================================
+URL = "https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv"
+df = pd.read_csv(URL)
+
+# Mirada rápida
+print("Shape bruto:", df.shape)
+print("Cols:", list(df.columns))
+
+# =======================================
+# 2) Selección de variables y objetivo (y)
+# =======================================
+# Objetivo: Survived (0/1)
+y = df["Survived"].astype(int).values
+
+# Tomamos columnas usuales y evitamos leakage (PassengerId, Name, Ticket, Cabin no ayudan de base)
+X = df[[
+    "Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked"
+]].copy()
+
+# =======================================
+# 3) Feature engineering liviano y limpio
+# =======================================
+# 3.1) Imputación simple (dejar NaN y luego imputamos con SimpleImputer)
+# 3.2) Crear FamilySize y IsAlone (suma de SibSp+Parch y binario)
+X["FamilySize"] = X["SibSp"].fillna(0) + X["Parch"].fillna(0) + 1
+X["IsAlone"] = (X["FamilySize"] == 1).astype(int)
+
+# =================================
+# 4) Definición de columnas por tipo
+# =================================
+num_cols = ["Age", "SibSp", "Parch", "Fare", "FamilySize"]
+cat_cols = ["Pclass", "Sex", "Embarked"] # Pclass como categórica ayuda a Pne-Hot
+
+# ========================================
+# 5) Preprocesamiento con ColumnTransformer
+# ========================================
+numeric_transformer = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler()) # denso; aquí sí con media
+])
+
+categorical_transformer = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+])
+
+from sklearn.pipeline import Pipeline
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_transformer, num_cols),
+        ("cat", categorical_transformer, cat_cols)
+    ],
+    remainder="drop"
+)
+
+# ================================
+# 6) Split train/test estratificado
+# ================================
+X_train_df, X_test_df, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=SEED, stratify=y
+)
+
+# Ajustar transformadores en train y transformar ambos
+X_train = preprocessor.fit_transform(X_train_df)
+X_test = preprocessor.transform(X_test_df)
+
+X_train = X_train.astype("float32")
+X_test = X_test.astype("float32")
+
+print("Input dims:", X_train.shape[1])
+
+# ================================
+# 7) Definir y compilar el modelo
+# ================================
+def build_model(input_dim: int) -> tf.keras.Model:
+    model = models.Sequential([
+        layers.Input(shape=(input_dim,)),
+        layers.Dense(32, activation="relu"),
+        layers.Dropout(0.15),
+        layers.Dense(32, activation="relu"),
+        layers.Dropout(0.15),
+        layers.Dense(1, activation="sigmoid")
+    ])
+
+    model.compile(
+        optimizer="adam",
+        loss="binary_crossentropy",
+        metrics=["accuracy", tf.keras.metrics.AUC(name="auc")]
+    )
+    return model
+
+model = build_model(X_train.shape[1])
+model.summary()
+
+# ================================
+# 8) Callbacks (buenoas prácticas)
+# ================================
+cbs = [
+    callbacks.EarlyStopping(monitor="val_auc", mode="max", patience=12, restore_best_weights=True),
+    callbacks.ModelCheckpoint("titanic_best.keras", monitor="val_auc", mode="max", save_best_only=True),
+    callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=6)
+]
+
+# ====================
+# 9) Entrenamiento
+# ====================
+hist = model.fit(
+    X_train, y_train,
+    validation_split=0.2,
+    epochs=200,
+    batch_size=32,
+    callbacks=cbs,
+    verbose=1
+)
+
+# ==========================
+# 10) Evaluación  en test
+# ==========================
+y_proba = model.predict(X_test).ravel()
+y_pred = (y_proba > 0.5).astype(int)
+
+print("\nMatriz de confusión:\n", confusion_matrix(y_test, y_pred))
+print("\nReporte de clasificación:\n", classification_report(y_test, y_pred, digits=4))
+print("\nAUC:", roc_auc_score(y_test, y_proba))
+
+# =============================================================
+# 11) Inferencia robusta: función predict_one(dict de entrada)
+# =============================================================
+# Opcional: define una lista de columnas base para asegurar orden/consistencia
+base_cols = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked"]
+
+def predict_one(sample: dict) -> float:
+    """
+    Recibe un diccionario 'crudo' con las llaves esperadas:
+    Pclass, Sex, Age, SibSp, Parch, Fare, Embarked
+    (FamilySize e IsAlone se calculan internamente).
+    Devuelve la probabilidad de supervivencia (float entre 0 y 1).
+    """
+    # 1) Validación rápida de llaves necesarias
+    faltantes = [k for k in base_cols if k not in sample]
+    if faltantes:
+        raise ValueError(f"Faltan llaves en el sample: {faltantes}")
+
+    # 2) DataFrame con las columnas base
+    s = pd.DataFrame([sample], columns=base_cols)
+
+    # 3) Feature engineering consistente con el train
+    s["FamilySize"] = s["SibSp"].fillna(0) + s["Parch"].fillna(0) + 1
+    s["IsAlone"] = (s["FamilySize"] == 1).astype(int)
+
+    # 4) Aplicar EXACTAMENTE el mismo preprocesamiento
+    #    OJO: el ColumnTransformer fue entrenado con num_cols + cat_cols
+    #    Tener columnas extra no afecta; con remainder='drop' se ignoran.
+    s_proc = preprocessor.transform(s)  # <-- usar 'preprocessor' (no 'preprocess')
+    s_proc = s_proc.astype("float32")
+
+    # 5) Predecir
+    proba = float(model.predict(s_proc, verbose=0).item())
+    return proba
+
+# Ejemplo de inferencia
+sample = {
+    "Pclass": 3,            # 1, 2 o 3
+    "Sex": "male",          # "male"/"female"
+    "Age": 22,
+    "SibSp": 1,
+    "Parch": 0,
+    "Fare": 7.25,
+    "Embarked": "S"         # "S", "C" o "Q"
+}
+proba = predict_one(sample)
+print(f"\nProbabilidad de sobrevivir (sample): {proba:.4f}")
+print("Sobrevive" if proba >= 0.5 else "No sobrevive")
