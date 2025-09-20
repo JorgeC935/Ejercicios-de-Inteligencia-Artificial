@@ -1,0 +1,64 @@
+# 1) Cargar y preparar
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+df = pd.read_csv("anime.csv")
+
+# 2) Limpieza básica
+df["type"] = df["type"].fillna("Unknown")
+df["genre"] = df["genre"].fillna("Unknown")
+df["episodes_num"] = pd.to_numeric(df["episodes"], errors="coerce")
+df["members_num"] = pd.to_numeric(df["members"], errors="coerce")
+df = df.dropna(subset=["episodes_num", "members_num", "rating"])
+
+# 3) Ingeniería de variables (otras distintas a tu ejemplo)
+#   - codificamos 'type'
+le_type = LabelEncoder()
+df["type_encoded"] = le_type.fit_transform(df["type"])
+
+#   - tomamos SOLO el primer género (más simple y diferente a tu código)
+df["genre_first"] = df["genre"].str.split(",").str[0].str.strip()
+le_genre = LabelEncoder()
+df["genre_encoded"] = le_genre.fit_transform(df["genre_first"])
+
+#   - transformaciones numéricas diferentes
+df["episodes_sqrt"] = np.sqrt(df["episodes_num"])
+df["members_log"] = np.log1p(df["members_num"])
+
+# 4) Objetivo (clasificación por rating en 3 niveles)
+df["rating_category"] = pd.cut(df["rating"], bins=[-np.inf, 7.0, 8.5, np.inf],
+                               labels=["Bajo", "Medio", "Alto"])
+df = df.dropna(subset=["rating_category"])
+
+# 5) X, y (nuevas variables)
+X = df[["type_encoded", "genre_encoded", "episodes_sqrt", "members_log"]].values
+y = df["rating_category"].values
+
+# 6) Escalado y codificación de y
+scaler = StandardScaler()
+X = scaler.fit_transform(X)
+le_y = LabelEncoder()
+y = le_y.fit_transform(y)
+
+# 7) Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.30, random_state=42, stratify=y
+)
+
+# 8) Modelo (capas diferentes a tu ejemplo)
+mlp = MLPClassifier(hidden_layer_sizes=(32,16), activation="relu",
+                    max_iter=2000, random_state=42)
+
+# 9) Entrenamiento
+mlp.fit(X_train, y_train)
+
+# 10) Evaluación
+y_pred = mlp.predict(X_test)
+print("Precisión en test:", accuracy_score(y_test, y_pred))
+print("\nClases:", list(le_y.classes_))
+print("\nReporte de clasificación:\n", classification_report(y_test, y_pred, zero_division=0))
+print("Matriz de confusión:\n", confusion_matrix(y_test, y_pred))
