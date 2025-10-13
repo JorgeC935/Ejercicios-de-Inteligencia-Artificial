@@ -1,0 +1,183 @@
+# Notebook 3: Filtros y efectos básicos en imágenes
+
+# Importamos las librerías necesarias
+import cv2  # Importamos OpenCV para procesamiento de imágenes
+import numpy as np  # Importamos numpy para manejo de arrays
+import matplotlib.pyplot as plt  # Importamos matplotlib para visualización
+from google.colab.patches import cv2_imshow  # Importamos función para mostrar imágenes en Colab
+
+# Cargar una imagen de ejemplo
+from urllib.request import urlopen  # Para abrir URLs
+
+# URL de una imagen de ejemplo
+url = 'https://raw.githubusercontent.com/opencv/opencv/master/samples/data/lena.jpg'
+# Abrimos la URL y leemos los bytes de la imagen
+resp = urlopen(url)
+# Convertimos los bytes a un array de numpy
+img_array = np.asarray(bytearray(resp.read()), dtype=np.uint8)
+# Decodificamos el array como una imagen usando OpenCV
+image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+# OpenCV carga las imágenes en formato BGR, lo convertimos a RGB para visualización correcta
+image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+# 1. Suavizado de imagen con filtro gaussiano
+# Aplicamos un filtro gaussiano para suavizar la imagen (kernel de 5x5)
+blurred_image = cv2.GaussianBlur(image_rgb, (5, 5), 0)  # (5,5) es el tamaño del kernel, 0 es la desviación estándar
+
+# 2. Filtro de desenfoque medio
+# Aplicamos un filtro de desenfoque medio para suavizar la imagen (kernel de 5x5)
+average_blur = cv2.blur(image_rgb, (5, 5))  # (5,5) es el tamaño del kernel
+
+# 3. Filtro de desenfoque mediano
+# Aplicamos un filtro de mediana para reducir el ruido (tamaño de ventana 5)
+median_blur = cv2.medianBlur(image_rgb, 5)  # (5) es el tamaño de la ventana
+
+# 4. Filtro de desenfoque bilateral
+# Aplica un filtro bilateral para preservar los bordes mientras suaviza las áreas planas
+bilateral_blur = cv2.bilateralFilter(image_rgb, 9, 75, 75)  # 9 es el diámetro del vecindario, 75 son sigma color y espacio
+
+# 5. Ajuste de brillo y contraste
+# Ajustamos brillo y contraste usando transformación lineal alpha*image + beta
+alpha = 1.5  # Factor de contraste (aumenta, disminuye)
+beta = 50    # Factor de brillo (aumenta, disminuye)
+image_brightness_contrast = cv2.convertScaleAbs(image_rgb, alpha=alpha, beta=beta)  # Aplicamos la transformación
+
+# 6. Ecualización de histograma (en escala de grises)
+# Convertimos a escala de grises
+gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+# Aplicamos ecualización de histograma para mejorar el contraste
+equalized = cv2.equalizeHist(gray_image)
+
+# Visualización de todos los filtros
+plt.figure(figsize=(15, 10)) # Creamos una figura con tamaño específico
+
+# Imagen original
+plt.subplot(2, 4, 1) # Creamos un subplot en la posición 1
+plt.title('Imagen Original') # Añadimos un título
+plt.imshow(image_rgb) # Mostrar la imagen original
+plt.axis('off') # Ocultamos los ejes
+
+# Imagen con filtro gaussiano
+plt.subplot(2, 4, 2) # Creamos un subplot en la posición 2
+plt.title('Filtro Gaussiano') # Añadimos un título
+plt.imshow(blurred_image) # Mostramos la imagen con filtro gaussiano
+plt.axis('off') # Ocultamos los ejes
+
+# Imagen con filtro de promedio
+plt.subplot(2, 4, 3) # Creamos un subplot en la posición 3
+plt.title('Filtro de Promedio')# Añadimos un título
+plt.imshow(average_blur) # Mostrar la imagen con filtro promedio
+plt.axis('off') # Ocultamos los ejes
+
+# Imagen con filtro de mediana
+plt.subplot(2, 4, 4) # Creamos un subplot en la posición 4
+plt.title('Filtro de Mediana') # Añadimos un título
+plt.imshow(median_blur) # Mostrar la imagen con filtro de mediana
+plt.axis('off') # Ocultamos los ejes
+
+# Imagen con filtro bilateral
+plt.subplot(2, 4, 5) # Creamos un subplot en la posición 5
+plt.title('Filtro Bilateral') # Añadimos un título
+plt.imshow(bilateral_blur) # Mostrar la imagen con filtro bilateral
+plt.axis('off') # Ocultamos los ejes
+
+# Imagen  con ajuste de brillo y contraste
+plt.subplot(2, 4, 6) # Creamos un subplot en la posición 6
+plt.title('Ajuste Brillo/Contraste') # Añadimos un título
+plt.imshow(image_brightness_contrast) # Mostrar la imagen con ajustes de brillo y constraste
+plt.axis('off') # Ocultamos los ejes
+
+# Imagen original en escala de grises
+plt.subplot(2, 4, 7) # Creamos un subplot en la posición 7
+plt.title('Escala de Grises') # Añadimos un título
+plt.imshow(gray_image, cmap='gray') # Mostrar la imagen con escala de grises
+plt.axis('off') # Ocultamos los ejes
+
+# Imagen con ecualización de histograma
+plt.subplot(2, 4, 8) # Creamos un subplot en la posición 8
+plt.title('Ecualización de Histograma') # Añadimos un título
+plt.imshow(equalized, cmap='gray') # Mostrar la imagen con ecualización de histograma
+plt.axis('off') # Ocultamos los ejes
+
+plt.tight_layout() # Ajustamos el layout para que no se superpongan los títulos
+plt.show() # Mostramos la figura completa
+
+# Visualización de histogramas
+plt.figure(figsize=(15, 5)) # Creamos una figura con tmaño especifífico
+
+# Histograma de la imagen original en escala de grises
+plt.subplot(1, 2, 1) # Creamos un subplot en la posición 1
+plt.title('Histograma Original') # Añadimos un título
+plt.hist(gray_image.ravel(), 256, [0, 256]) # Calculamos y mostramos el histograma
+plt.xlabel('Valor de píxel') # Etiqueta eje X
+plt.ylabel('Frecuencia') # Etiqueta eje Y
+
+# Histograma de la imagen ecualizada
+plt.subplot(1, 2, 2) # Creamos un subplot en la posición
+plt.title('Histograma Ecualizado') # Añadimos un título
+plt.hist(equalized.ravel(), 256, [0, 256]) # Calculamos y mostramos el histograma
+plt.xlabel('Valor de píxel') # Etiqueta eje X
+plt.ylabel('Frecuencia') # Etiqueta eje Y
+
+
+
+# Convertimos a escala de grises si aún no lo está (aunque ya se hizo antes, lo repetimos para claridad)
+gray_image_new_filters = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+# 1. Filtro Sobel (horizontal y vertical)
+sobelx = cv2.Sobel(gray_image_new_filters, cv2.CV_64F, 1, 0, ksize=5) # Gradiente en X
+sobely = cv2.Sobel(gray_image_new_filters, cv2.CV_64F, 0, 1, ksize=5) # Gradiente en Y
+# Combinamos los resultados de Sobel X y Y (opcional, para visualizar la magnitud del gradiente)
+sobel_combined = cv2.magnitude(sobelx, sobely)
+
+# 2. Filtro Scharr (horizontal y vertical)
+scharrx = cv2.Scharr(gray_image_new_filters, cv2.CV_64F, 1, 0) # Gradiente en X
+scharry = cv2.Scharr(gray_image_new_filters, cv2.CV_64F, 0, 1) # Gradiente en Y
+# Combinamos los resultados de Scharr X y Y
+scharr_combined = cv2.magnitude(scharrx, scharry)
+
+# 3. Filtro Laplaciano
+laplacian = cv2.Laplacian(gray_image_new_filters, cv2.CV_64F)
+
+# 4. Detección de Bordes Canny (usamos la imagen en gris original para esta)
+edges_canny_new = cv2.Canny(gray_image, 100, 200) # Usamos la variable 'gray_image' de celdas anteriores
+
+# Visualización de los nuevos filtros
+plt.figure(figsize=(20, 5))
+
+# Filtro Sobel Combinado
+plt.subplot(1, 4, 1)
+plt.title('Filtro Sobel')
+# Convertimos a uint8 para visualización si es necesario (puede haber valores negativos o fuera de rango 0-255)
+plt.imshow(cv2.convertScaleAbs(sobel_combined), cmap='gray')
+plt.axis('off')
+
+# Filtro Scharr Combinado
+plt.subplot(1, 4, 2)
+plt.title('Filtro Scharr')
+plt.imshow(cv2.convertScaleAbs(scharr_combined), cmap='gray')
+plt.axis('off')
+
+# Filtro Laplaciano
+plt.subplot(1, 4, 3)
+plt.title('Filtro Laplaciano')
+plt.imshow(cv2.convertScaleAbs(laplacian), cmap='gray')
+plt.axis('off')
+
+# Detección de Bordes Canny
+plt.subplot(1, 4, 4)
+plt.title('Detección de Bordes (Canny)')
+plt.imshow(edges_canny_new, cmap='gray')
+plt.axis('off')
+
+plt.tight_layout()
+plt.show()
+
+1.  **Filtro Sobel:** 
+Es un operador de detección de bordes que calcula la aproximación de la gradiente de intensidad de la imagen en cada punto. Esto resalta las áreas de alta variación espacial de intensidad, que a menudo corresponden a bordes. Se aplica por separado en las direcciones horizontal y vertical.
+2.  **Filtro Scharr:** 
+Similar al filtro Sobel, pero más sensible a los bordes diagonales. También calcula la gradiente de intensidad, pero utilizando un kernel diferente.
+3.  **Filtro Laplaciano:** 
+Este operador detecta los bordes basándose en la segunda derivada espacial de la imagen. Es útil para encontrar puntos en los que la intensidad cambia rápidamente, lo que puede indicar la presencia de bordes.
+4.  **Detección de Bordes Canny:** 
+Un detector de bordes multi-etapa que es conocido por su buen rendimiento al detectar una amplia gama de bordes.
