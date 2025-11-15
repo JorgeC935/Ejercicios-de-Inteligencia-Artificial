@@ -1,0 +1,60 @@
+import tensorflow as tf
+
+base_model=tf.keras.applications.resnet.ResNet101(
+         include_top=False,
+         weights='imagenet',
+         input_shape=(224,224,3)
+)
+
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.models import Sequential
+
+model=Sequential()
+model.add(base_model)
+model.add(Flatten())
+
+import cv2
+import glob
+import numpy as np
+
+def get_convfeatures(path):
+    img=cv2.imread(path)
+    img=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+    img=cv2.resize(img,(224,224))
+    return model.predict(np.array([img]))
+
+get_convfeatures("/kaggle/input/pokemon-images-dataset/pokemon_jpg/pokemon_jpg/10.jpg").shape
+
+features=[]
+names=[]
+
+for path in glob.glob("/kaggle/input/pokemon-images-dataset/pokemon_jpg/pokemon_jpg/*.jpg"):
+    features.append(get_convfeatures(path).reshape(-1))
+    names.append(path)
+
+features=np.array(features)
+names=np.array(names)
+
+input_vector=get_convfeatures("/kaggle/input/pokemon-images-dataset/pokemon_jpg/pokemon_jpg/23.jpg")
+
+from scipy import spatial
+input_vector = np.squeeze(input_vector)
+
+dist=np.array([spatial.distance.cosine(input_vector,i) for i in features])
+
+min_index=dist.argsort()[:3]
+
+names[min_index]
+
+import matplotlib.pyplot as plt
+
+def imshow(img):
+    fig,ax = plt.subplots(1,1,figsize=(4,4))
+    ax.imshow(img)
+    plt.show()
+
+for i in names[min_index]:
+    img=cv2.imread(i)
+    img=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+    imshow(img)
+
