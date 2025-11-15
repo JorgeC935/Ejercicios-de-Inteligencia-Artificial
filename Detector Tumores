@@ -1,0 +1,168 @@
+# ==========================
+# IMPORTACIÓN DE LIBRERÍAS
+# ==========================
+
+import numpy as np
+import pandas as pd
+import os
+import cv2
+import matplotlib.pyplot as plt
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# =============================
+# CONFIGURAR RUTA DEL DATA SET
+# =============================
+
+# Ruta del dataset descargado desde la sección "Add Datset" en Kaggle Notebook
+dataset_path = "/kaggle/input/brain-tumor-mri-dataset/"
+
+# Verificamos las carpetas
+os.listdir(dataset_path)
+
+# =============================
+# PARÁMETROS DE PROCESAMIENTO
+# =============================
+
+# Dimensiones de las imagenes (todas seran redimensionadas)
+img_width, img_height = 150, 150
+
+# Definir rutas específicas
+train_dir = os.path.join(dataset_path, "Training")
+test_dir = os.path.join(dataset_path, "Testing")
+
+# =============================
+# AUMENTACIÓN DE DATOS
+# =============================
+
+# Generador de imagenes de entrenamiento
+train_datagen = ImageDataGenerator(
+    rescale=1./255,           # Normalizar
+    rotation_range=20,        # Rotar ligeramente
+    zoom_range=0.15,          # Zoom aleatorio
+    width_shift_range=0.2,    # Desplazamiento horizontal
+    height_shift_range=0.2,   # Desplazamiento vertical
+    shear_range=0.15,         # Cizalladura
+    horizontal_flip=True,     # Volteo horizontal
+    fill_mode="nearest"       # Relleno de pixeles vacíos
+)
+
+# Generador de imágenes de prueba (solo normalizar)
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+# Crear dataset
+train_generator = train_datagen.flow_from_directory(
+    train_dir,
+    target_size=(img_width, img_height),
+    batch_size=32,
+    class_mode='binary'
+)
+
+test_generator = train_datagen.flow_from_directory(
+    train_dir,
+    target_size=(img_width, img_height),
+    batch_size=32,
+    class_mode='binary'
+)
+
+# =============================
+# CREAR EL MODELO CNN
+# =============================
+
+model = Sequential([
+    Conv2D(32, (3, 3), activation='relu', input_shape=(img_width, img_height, 3)),
+    MaxPooling2D(2, 2),
+
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D(2, 2),
+
+    Conv2D(128, (3, 3), activation='relu'),
+    MaxPooling2D(2, 2),
+
+    Flatten(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(1, activation='sigmoid') # 1 salida: tumor o no tumor
+])
+
+# =============================
+# COMPILAR MODELO
+# =============================
+
+model.compile(
+    optimizer='adam',
+    loss='binary_crossentropy',
+    metrics=['accuracy']
+)
+
+# =============================
+# ENTRENAMIENTO DEL MODELO
+# =============================
+
+history = model.fit(
+    train_generator,
+    epochs=15,
+    validation_data=test_generator
+)
+
+# =================================
+# GRAFICAR PRECISIÓN Y PÉRDIDA
+# =================================
+
+# Precisión
+plt.plot(history.history['accuracy'], label='Precisión Entrenamiento')
+plt.plot(history.history['val_accuracy'], label='Precisión Validación')
+plt.title('Precisión durante el entrenamiento')
+plt.xlabel('Épocas')
+plt.ylabel('Precisión')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Pérdida
+plt.plot(history.history['loss'], label='Pérdida Entrenamiento')
+plt.plot(history.history['val_loss'], label='Pérdida Validación')
+plt.title('Pérdida durante el entrenamiento')
+plt.xlabel('Épocas')
+plt.ylabel('Pérdida')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# =================================
+# PREDICCIÓN DE UNA SOLA IMAGEN
+# =================================
+
+# Ruta de una imagen de prueba
+test_image_path = os.path.join(test_dir, 'notumor', 'Te-no_0010.jpg') # Puedes cambiar la subcarpeta
+
+# Cargar imagen 
+img = cv2.imread(test_image_path)
+img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) # Convertir de BGR a RGB
+img_resized = cv2.resize(img, (img_width, img_height))
+
+# Normalizar y expandir dimensiones
+img_normalized = img_resized / 255.0
+img_input = np.expanded_dims(img_normalized, axis=0) # (1, 150, 150, 3)
+
+# Realizar predicción
+prediction = model.predict(img_input)[0][0]
+
+# Interpretar predicción
+if prediction > 0.5:
+    resultado = "Tumor detectado"
+    color = "red"
+else:
+    resultado = "No se detectó tumor"
+    color = "green"
+
+# Mostrar imagen y resultado
+plt.figure(figsize=(5, 5))
+plt.imshow(img_resized)
+plt.title(f"{resultado} ({prediction:.2f})", color=color)
+plt.axis('off')
+plt.show()
+
