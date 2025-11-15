@@ -1,0 +1,152 @@
+# Notebook 6: Seguimiento de objetos mediante color
+
+# Importamos las librerías necesarias
+import cv2 # Importamos OpenCV para procesamiento de imaganes
+import numpy as np # Importamos numpy para manejo de arrays
+import matplotlib.pyplot as plt # Importamos matplotlib para visualización
+from google.colab.patches import cv2_imshow # Importamos función para mostrar imagenes en Colab
+
+# Cargar unam imagen de ejemplo
+from urllib.request import urlopen # Para abrir URLs
+
+# URL de una imagen con objetos coloridos
+url = 'https://raw.githubusercontent.com/opencv/opencv/master/samples/data/lena.jpg'
+# Abrimos la URL y leemos los bytes de la imagen
+resp = urlopen(url)
+# Convertimos los bytes a un array de numpy
+image = np.asarray(bytearray(resp.read()), dtype="uint8")
+# Decodificamos el array como una imagen usando OpenCV
+image = cv2.imdecode(image, cv2.IMREAD_COLOR)
+# OpenCV carga las imágenes en formato BGR
+# Creamos una copia para visualización en RGB
+image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+# 1. Convertir la imagen a espacio de color HSV
+# HSV (Hue, Saturation, Value) es mejor para segmentación por color
+hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+# 2. Definir rangos de color para rastrear (en este caso, detctaremos tonos rojos)
+# Rango bajo de rojo (Hue alrededor de 0)
+lower_red1 = np.array([0, 100, 100]) # Valores HSV mínimos
+upper_red1 = np.array([10, 255, 255]) # Valores HSV máximos
+
+# Rango alto de rojo (Hues alrededor de 180)
+lower_red2 = np.array([160, 100, 100]) # Valores HSV mínimos
+upper_red2 = np.array([180, 255, 255]) # Valores HSV máximos
+
+# 3. Crear máscaras para los rangos de color
+# Aplicamos la primera máscara prara el rango bajo de rojo
+mask1 = cv2.inRange(hsv_image, lower_red1, upper_red1)
+# Aplicamos la segunda máscara para el rango alto de rojo
+mask2 = cv2.inRange(hsv_image, lower_red2, upper_red2)
+# Combinamos las máscara para detectar todo el rango de rojo
+red_mask = cv2.bitwise_or(mask1, mask2)
+
+#4 Aplicar la mascara a la imagen original
+#El resultado mostrara  solo regiones  rojas de la imagen
+red_detected = cv2.bitwise_and(image_rgb, image_rgb, mask=red_mask)
+
+#5 Ahora detectamos objetos azules
+#Definims el rango de color azul en HSV
+lower_blue = np.array([100, 150, 50])
+upper_blue = np.array([140, 255, 255])
+ #Creamos la mascara para el rango azul
+blue_mask = cv2.inRange(hsv_image, lower_blue, upper_blue)
+ #Aplicamos la mascara a la imagen orif=ginal
+blue_detected = cv2.bitwise_and(image_rgb, image_rgb, mask=blue_mask)
+
+# 6. Detectemos objetos verdes
+# Definimos el rango de color verde en HSV
+lower_green = np.array([40, 100, 50]) # Valores HSV minimos
+upper_green = np.array([80, 255, 255]) # Valore HSV máximos
+
+# Creamos la máscara para el rango verde
+green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
+
+# Aplicamos la mascara a la imagen original
+green_detected = cv2.bitwise_and(image_rgb, image_rgb, mask=green_mask)
+
+# 7. Encontrar contornos en la máscara roja para marcar los objetos
+# La función findContours requiere una imagen binaria (la máscara)
+contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+# Creamos una copia de la imagen originalpara dibujar los contornos
+contour_image = image_rgb.copy()
+
+# Dibujamos los contornos en la imagen
+cv2.drawContours(contour_image, contours, -1, (0, 255, 0), 2) # Color vrde, grosoe 2
+# Para cada contorno grande, dibujamos un rectangulo y el centro
+for contour in contours:
+  # Solo procesamos contornos con área suficiente
+  area = cv2.contourArea(contour)
+  if area > 500: # Umbral de área para filtrar ruido
+    # Obtenemos el rectánculo que encierra el contorno
+    x, y, w, h = cv2.boundingRect(contour)
+    # Dibujamos el rectángulo
+    cv2.rectangle(contour_image, (x, y), (x+w, y+h), (255, 0, 0), 2)
+
+    # Calculamos el centro del contorno
+    M = cv2.moments(contour)
+    if M["m00"] != 0:
+      cX = int(M["m10"] / M["m00"])
+      cY = int(M["m01"] / M["m00"])
+      # Dibujamos el centro
+      cv2.circle(contour_image, (cX, cY), 5, (0, 0, 255), -1)
+      # Añadimos texto
+      cv2.putText(contour_image, f"Centro", (cX - 20, cY - 20),
+                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+# 8. Visualización de los resultados
+plt.figure(figsize=(15, 10)) # Creamos una figura con tamaño específico
+
+# Imagen original
+plt.subplot(2, 3, 1) # Creamos un subplot en la posición 1
+plt.title('Imagen Original') # Añadimos un título
+plt.imshow(image_rgb) # Mostramos la imagen original
+plt.axis('off') # Ocultamos los ejes
+
+# Imagen HSV
+plt.subplot(2, 3, 2) # Creamos un subplot en la posición 2
+plt.title('Imagen HSV') # Añadimos un título
+plt.imshow(cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB)) # Convertimos HSV a RGB para visualizar
+plt.axis('off') # Ocultamos los ejes
+
+# Mascara roja
+
+plt.subplot(2, 3, 3) # Creamos un subplot en la posición 3
+plt.title('Máscara Roja') # Añadimos un título
+plt.imshow(red_mask, cmap='gray') # Mostrar la máscara en escala de grises
+plt.axis('off') # Ocultamos los ejes
+
+# Detección de rojo
+plt.subplot(2, 3, 4) # Creamos un subplot en la posición 4
+plt.title('Detección de Rojo') # Añadimos un título
+plt.imshow(red_detected) # Mostrar la imagen con solo objetos rojos
+plt.axis('off') # Ocultamos los ejes
+
+# Detección de azul
+plt.subplot(2, 3, 5) # Creamos un subplot en la posición 5
+plt.title('Detección de Azul') # Añadimos un título
+plt.imshow(blue_mask) # Mostrar la imagen con solo objetos azules
+plt.axis('off') # Ocultamos los ejes
+
+# Detección de azul
+plt.subplot(2, 3, 6) # Creamos un subplot en la posición 6
+plt.title('Contornos y Centros') # Añadimos un título
+plt.imshow(contour_image) # Mostramos la imagen con contornos y centros
+plt.axis('off') # Ocultamos los ejes
+
+plt.tight_layout()
+plt.show()
+
+# 9. Información sobre la segmentación por color
+print("Segmentación por color en HSV:")
+print("1. HSV (Hue, Saturation, Value) separa el color (H) del brillo (V) y saturación (S).")
+print("2. En OpenCV, el rango H va de 0-180 (no 0-360 como es habitual).")
+print("3. Rangos típicos en HSV:")
+print("   - Rojo: H = 0-10 o 160-180")
+print("   - Verde: H = 40-80")
+print("   - Azul: H = 100-140")
+print(f"4. Se encontraron {len(contours)} contornos en la máscara roja.")
+print("5. Esta técnica es útil para seguimiento de objetos en video.")
+
